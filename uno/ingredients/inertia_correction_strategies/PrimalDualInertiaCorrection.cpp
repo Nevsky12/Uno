@@ -89,21 +89,23 @@ namespace uno {
 
    void PrimalDualInertiaCorrection::regularize_augmented_matrix(Statistics& statistics, const Subproblem& /*subproblem*/,
          double dual_regularization_parameter, const Inertia& expected_inertia, DirectSymmetricIndefiniteLinearSolver<double>& linear_solver,
-         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables) {
+         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables,
+         const InertiaEvaluator& evaluate_inertia) {
       this->primal_regularization = 0.;
       this->dual_regularization = 0.;
       this->regularize_until_correct_inertia(statistics, dual_regularization_parameter, expected_inertia, linear_solver,
-         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ false);
+         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ false, evaluate_inertia);
    }
 
    // the matrix was factorized with the current regularization factors, but is deemed singular by the caller (IPOPT's
    // "pretend singular" heuristic): resume the correction from the current factors as if the factorization were singular
    bool PrimalDualInertiaCorrection::regularize_singular_augmented_matrix(Statistics& statistics, const Subproblem& /*subproblem*/,
          double dual_regularization_parameter, const Inertia& expected_inertia, DirectSymmetricIndefiniteLinearSolver<double>& linear_solver,
-         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables) {
+         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables,
+         const InertiaEvaluator& evaluate_inertia) {
       DEBUG << "The augmented matrix is assumed singular\n";
       this->regularize_until_correct_inertia(statistics, dual_regularization_parameter, expected_inertia, linear_solver,
-         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ true);
+         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ true, evaluate_inertia);
       return true;
    }
 
@@ -111,14 +113,16 @@ namespace uno {
    // was increased): the inertia of the new factorization is checked and the regularization increased if needed
    void PrimalDualInertiaCorrection::refactorize_augmented_matrix(Statistics& statistics, const Subproblem& /*subproblem*/,
          double dual_regularization_parameter, const Inertia& expected_inertia, DirectSymmetricIndefiniteLinearSolver<double>& linear_solver,
-         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables) {
+         BlockAugmentedMatrix block_augmented_matrix, Range<> primal_regularization_variables,
+         const InertiaEvaluator& evaluate_inertia) {
       this->regularize_until_correct_inertia(statistics, dual_regularization_parameter, expected_inertia, linear_solver,
-         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ false);
+         block_augmented_matrix, primal_regularization_variables, /* assume_singular = */ false, evaluate_inertia);
    }
 
    void PrimalDualInertiaCorrection::regularize_until_correct_inertia(Statistics& statistics, double dual_regularization_parameter,
          const Inertia& expected_inertia, DirectSymmetricIndefiniteLinearSolver<double>& linear_solver,
-         BlockAugmentedMatrix& block_augmented_matrix, Range<> primal_regularization_variables, bool assume_singular) {
+         BlockAugmentedMatrix& block_augmented_matrix, Range<> primal_regularization_variables, bool assume_singular,
+         const InertiaEvaluator& evaluate_inertia) {
       const double dual_regularization_value = this->dual_regularization_fraction * dual_regularization_parameter;
       size_t number_attempts = 0;
 
@@ -144,7 +148,7 @@ namespace uno {
             DEBUG << "Testing factorization with regularization factors (" << this->primal_regularization << ", " << this->dual_regularization << ")\n";
             linear_solver.do_numerical_factorization(false);
             ++number_attempts;
-            const Inertia estimated_inertia = linear_solver.get_inertia();
+            const Inertia estimated_inertia = evaluate_inertia ? evaluate_inertia() : linear_solver.get_inertia();
             DEBUG << "Expected inertia  " << expected_inertia << '\n';
             DEBUG << "Estimated inertia " << estimated_inertia << '\n';
 
