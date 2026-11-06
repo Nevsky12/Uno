@@ -26,8 +26,10 @@ namespace uno {
       }
       const size_t dimension = subproblem.number_variables + subproblem.number_constraints;
       // assemble the correction columns into E (E is taller than the correction matrix; the extra rows stay 0)
-      this->E.emplace(dimension, this->correction_rank);
-      this->H.emplace(dimension, this->correction_rank);
+      if (!this->E || this->E->number_rows != dimension || this->E->number_columns != this->correction_rank) {
+         this->E.emplace(dimension, this->correction_rank);
+         this->H.emplace(dimension, this->correction_rank);
+      }
       for (size_t column_index: Range(this->correction_rank)) {
          const auto correction_column = this->hessian_model.get_correction_column(column_index);
          for (size_t row_index: Range(subproblem.problem.model.number_variables)) {
