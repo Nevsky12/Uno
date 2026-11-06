@@ -239,7 +239,7 @@ namespace uno {
 
    template <typename LowRankCorrection>
    bool EQPSolver<LowRankCorrection>::has_second_order_corrections() const {
-      return true;
+      return 0 < this->direction.number_constraints;
    }
 
    // equality constraints (lb == ub): residuals r(x) = c(x) - lb
