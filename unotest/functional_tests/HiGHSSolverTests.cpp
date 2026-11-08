@@ -1,14 +1,10 @@
 // Copyright (c) 2024 Charlie Vanaret
 // Licensed under the MIT license. See LICENSE file in the project directory for details.
 
-#include <chrono>
 #include <limits>
 #include <stdexcept>
-#include <thread>
 #include <gtest/gtest.h>
 #if !defined(_WIN32)
-#include <csignal>
-#include <sys/wait.h>
 #include <unistd.h>
 #endif
 #include "ingredients/subproblem_solvers/HiGHS/HiGHSSolver.hpp"
@@ -94,14 +90,14 @@ TEST(HiGHSSolver, LP) {
 // Bug: HiGHS' active-set QP solver may stall on convex QPs with a semidefinite Hessian, such as the l1 feasibility
 // subproblems (no curvature in the elastic variables). The QP below is the restoration subproblem of HS15 (trust region,
 // primal regularization): HiGHS 1.15 performs millions of iterations without terminating. Uno set no iteration limit, so
-// that the solve never returned. The QP is solved in a child process that is killed after a timeout.
+// that the solve never returned. A fresh child process avoids inheriting HiGHS' thread pool from earlier tests.
 TEST(HiGHSSolver, StallingQPSolveReturns) {
 #if defined(_WIN32)
-   GTEST_SKIP() << "requires fork()";
+   GTEST_SKIP() << "requires POSIX alarm()";
 #else
-   const pid_t pid = fork();
-   ASSERT_NE(pid, -1);
-   if (pid == 0) { // child process: solve the QP
+   GTEST_FLAG_SET(death_test_style, "threadsafe");
+   EXPECT_EXIT(([] {
+      alarm(60);
       Options options;
       options.set_bool("print_subproblem", false);
       HiGHSSolver solver(options);
@@ -122,22 +118,7 @@ TEST(HiGHSSolver, StallingQPSolveReturns) {
       Statistics statistics;
       solver.solve(statistics, Vector<double>(4), direction, warmstart_information);
       _exit(0);
-   }
-   // parent process: wait for the child at most 60 seconds
-   int status = 0;
-   bool returned = false;
-   for (size_t attempt = 0; attempt < 600 && !returned; ++attempt) {
-      returned = (waitpid(pid, &status, WNOHANG) == pid);
-      if (!returned) {
-         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      }
-   }
-   if (!returned) {
-      kill(pid, SIGKILL);
-      waitpid(pid, &status, 0);
-   }
-   ASSERT_TRUE(returned) << "the HiGHS QP solve did not return";
-   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+   }()), testing::ExitedWithCode(0), "");
 #endif
 }
 

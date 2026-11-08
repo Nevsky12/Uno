@@ -26,8 +26,10 @@ namespace uno {
       }
       const size_t dimension = subproblem.number_variables + subproblem.number_constraints;
       // assemble the correction columns into E (E is taller than the correction matrix; the extra rows stay 0)
-      this->E.emplace(dimension, this->correction_rank);
-      this->H.emplace(dimension, this->correction_rank);
+      if (!this->E || this->E->number_rows != dimension || this->E->number_columns != this->correction_rank) {
+         this->E.emplace(dimension, this->correction_rank);
+         this->H.emplace(dimension, this->correction_rank);
+      }
       for (size_t column_index: Range(this->correction_rank)) {
          const auto correction_column = this->hessian_model.get_correction_column(column_index);
          for (size_t row_index: Range(subproblem.problem.model.number_variables)) {
@@ -38,7 +40,12 @@ namespace uno {
       linear_solver.solve_indefinite_system(this->E->data(), this->H->data(), this->correction_rank);
       // with the correction E C Eᵀ (C = diag(c_i), c_i the coefficients of the rank-one terms): T = C⁻¹ + Eᵀ H, then
       // factorize it in place
-      this->T.emplace(this->correction_rank, this->correction_rank);
+      if (!this->T || this->T->number_rows != this->correction_rank) {
+         this->T.emplace(this->correction_rank, this->correction_rank);
+      }
+      else {
+         this->T->fill(0.);
+      }
       for (size_t column_index: Range(this->correction_rank)) {
          this->T->entry(column_index, column_index) = 1./this->hessian_model.get_correction_column_scaling(column_index);
       }

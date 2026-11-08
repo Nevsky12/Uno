@@ -533,12 +533,12 @@ bool uno_set_variable_lower_bound(void* model, uno_int variable_index, double lo
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   variable_index -= user_model->base_indexing;
-   if (variable_index < 0 || variable_index >= user_model->number_variables) {
+   if (variable_index < user_model->base_indexing ||
+         variable_index - user_model->base_indexing >= user_model->number_variables) {
       WARNING << "Please specify a valid index."  << std::endl;
       return false;
    }
+   variable_index -= user_model->base_indexing;
    user_model->variables_lower_bounds[static_cast<size_t>(variable_index)] = lower_bound;
    return true;
 }
@@ -549,12 +549,12 @@ bool uno_set_variable_upper_bound(void* model, uno_int variable_index, double up
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   variable_index -= user_model->base_indexing;
-   if (variable_index < 0 || variable_index >= user_model->number_variables) {
+   if (variable_index < user_model->base_indexing ||
+         variable_index - user_model->base_indexing >= user_model->number_variables) {
       WARNING << "Please specify a valid index."  << std::endl;
       return false;
    }
+   variable_index -= user_model->base_indexing;
    user_model->variables_upper_bounds[static_cast<size_t>(variable_index)] = upper_bound;
    return true;
 }
@@ -576,6 +576,21 @@ bool uno_set_objective(void* model, uno_int optimization_sense, uno_objective_ca
    return true;
 }
 
+static bool is_valid_sparsity(uno_int number_rows, uno_int number_columns, uno_int number_nonzeros,
+      const uno_int* row_indices, const uno_int* column_indices, uno_int base_indexing) {
+   if (number_nonzeros < 0 || (0 < number_nonzeros && (row_indices == nullptr || column_indices == nullptr))) {
+      return false;
+   }
+   for (uno_int index = 0; index < number_nonzeros; ++index) {
+      // Check the lower bound before subtracting the base to avoid signed overflow.
+      if (row_indices[index] < base_indexing || column_indices[index] < base_indexing ||
+            row_indices[index] - base_indexing >= number_rows || column_indices[index] - base_indexing >= number_columns) {
+         return false;
+      }
+   }
+   return true;
+}
+
 bool uno_set_constraints(void* model, uno_int number_constraints, uno_constraints_callback constraint_functions,
       const double* constraints_lower_bounds, const double* constraints_upper_bounds, uno_int number_jacobian_nonzeros,
       const uno_int* jacobian_row_indices, const uno_int* jacobian_column_indices, uno_constraints_jacobian_callback jacobian) {
@@ -588,6 +603,11 @@ bool uno_set_constraints(void* model, uno_int number_constraints, uno_constraint
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
+   if (!is_valid_sparsity(number_constraints, user_model->number_variables, number_jacobian_nonzeros,
+         jacobian_row_indices, jacobian_column_indices, user_model->base_indexing)) {
+      WARNING << "Please specify a valid Jacobian sparsity pattern." << std::endl;
+      return false;
+   }
    user_model->number_constraints = number_constraints;
    user_model->constraint_functions = constraint_functions;
    // copy the bounds internally
@@ -649,12 +669,12 @@ bool uno_set_constraint_lower_bound(void* model, uno_int constraint_index, doubl
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   constraint_index -= user_model->base_indexing;
-   if (constraint_index < 0 || constraint_index >= user_model->number_constraints) {
+   if (constraint_index < user_model->base_indexing ||
+         constraint_index - user_model->base_indexing >= user_model->number_constraints) {
       WARNING << "Please specify a valid index."  << std::endl;
       return false;
    }
+   constraint_index -= user_model->base_indexing;
    user_model->constraints_lower_bounds[static_cast<size_t>(constraint_index)] = lower_bound;
    return true;
 }
@@ -665,12 +685,12 @@ bool uno_set_constraint_upper_bound(void* model, uno_int constraint_index, doubl
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   constraint_index -= user_model->base_indexing;
-   if (constraint_index < 0 || constraint_index >= user_model->number_constraints) {
+   if (constraint_index < user_model->base_indexing ||
+         constraint_index - user_model->base_indexing >= user_model->number_constraints) {
       WARNING << "Please specify a valid index."  << std::endl;
       return false;
    }
+   constraint_index -= user_model->base_indexing;
    user_model->constraints_upper_bounds[static_cast<size_t>(constraint_index)] = upper_bound;
    return true;
 }
@@ -711,6 +731,11 @@ bool uno_set_lagrangian_hessian(void* model, uno_int number_hessian_nonzeros, ch
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
+   if (!is_valid_sparsity(user_model->number_variables, user_model->number_variables, number_hessian_nonzeros,
+         hessian_row_indices, hessian_column_indices, user_model->base_indexing)) {
+      WARNING << "Please specify a valid Lagrangian Hessian sparsity pattern." << std::endl;
+      return false;
+   }
    user_model->number_hessian_nonzeros = number_hessian_nonzeros;
    // if the Hessian is empty, the problem is an LP
    if (number_hessian_nonzeros == 0) {
@@ -773,9 +798,8 @@ bool uno_set_initial_primal_iterate_component(void* model, uno_int index, double
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   index -= user_model->base_indexing;
-   if (0 <= index && index < user_model->number_variables) {
+   if (user_model->base_indexing <= index && index - user_model->base_indexing < user_model->number_variables) {
+      index -= user_model->base_indexing;
       user_model->initial_primal_iterate[static_cast<size_t>(index)] = initial_primal_component;
       return true;
    }
@@ -788,9 +812,8 @@ bool uno_set_initial_dual_iterate_component(void* model, uno_int index, double i
       return false;
    }
    CUserModel* user_model = static_cast<CUserModel*>(model);
-   // shift the index with the base indexing
-   index -= user_model->base_indexing;
-   if (0 <= index && index < user_model->number_constraints) {
+   if (user_model->base_indexing <= index && index - user_model->base_indexing < user_model->number_constraints) {
+      index -= user_model->base_indexing;
       user_model->initial_dual_iterate[static_cast<size_t>(index)] = initial_dual_component;
       return true;
    }
@@ -1264,47 +1287,34 @@ double uno_get_solution_objective(void* solver) {
    return result->solution_objective;
 }
 
-double uno_get_primal_solution_component(void* solver, uno_int index) {
-   const Result* result = uno_get_result(solver);
-   // shift the index with the base indexing
-   index -= result->base_indexing;
-   const size_t unsigned_index = static_cast<size_t>(index);
-   if (index < 0 || result->number_variables <= unsigned_index) {
+static size_t checked_solution_index(uno_int index, uno_int base_indexing, size_t dimension) {
+   if (index < base_indexing || dimension <= static_cast<size_t>(index - base_indexing)) {
       throw std::runtime_error("The index is not valid.");
    }
+   return static_cast<size_t>(index - base_indexing);
+}
+
+double uno_get_primal_solution_component(void* solver, uno_int index) {
+   const Result* result = uno_get_result(solver);
+   const size_t unsigned_index = checked_solution_index(index, result->base_indexing, result->number_variables);
    return result->primal_solution[unsigned_index];
 }
 
 double uno_get_constraint_dual_solution_component(void* solver, uno_int index) {
    const Result* result = uno_get_result(solver);
-   // shift the index with the base indexing
-   index -= result->base_indexing;
-   const size_t unsigned_index = static_cast<size_t>(index);
-   if (index < 0 || result->number_constraints <= unsigned_index) {
-      throw std::runtime_error("The index is not valid.");
-   }
+   const size_t unsigned_index = checked_solution_index(index, result->base_indexing, result->number_constraints);
    return result->constraint_dual_solution[unsigned_index];
 }
 
 double uno_get_lower_bound_dual_solution_component(void* solver, uno_int index) {
    const Result* result = uno_get_result(solver);
-   // shift the index with the base indexing
-   index -= result->base_indexing;
-   const size_t unsigned_index = static_cast<size_t>(index);
-   if (index < 0 || result->number_variables <= unsigned_index) {
-      throw std::runtime_error("The index is not valid.");
-   }
+   const size_t unsigned_index = checked_solution_index(index, result->base_indexing, result->number_variables);
    return result->lower_bound_dual_solution[unsigned_index];
 }
 
 double uno_get_upper_bound_dual_solution_component(void* solver, uno_int index) {
    const Result* result = uno_get_result(solver);
-   // shift the index with the base indexing
-   index -= result->base_indexing;
-   const size_t unsigned_index = static_cast<size_t>(index);
-   if (index < 0 || result->number_variables <= unsigned_index) {
-      throw std::runtime_error("The index is not valid.");
-   }
+   const size_t unsigned_index = checked_solution_index(index, result->base_indexing, result->number_variables);
    return result->upper_bound_dual_solution[unsigned_index];
 }
 
